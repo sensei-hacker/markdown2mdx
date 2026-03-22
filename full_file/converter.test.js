@@ -5,6 +5,7 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
 import { GfmToMdxConverter } from './converter.js';
+import { transform as demoteH1 } from './transforms/h1-demote.js';
 import { transform as fixHtml } from './transforms/html-fix.js';
 import { transform as convertAdmonitions } from './transforms/admonitions.js';
 import { transform as addFrontMatter, extractTitle, stemToTitle } from './transforms/front-matter.js';
@@ -294,6 +295,45 @@ describe('GfmToMdxConverter', () => {
       const result = converter.convert(input);
       assert.ok(result.content.includes('Array\\<T\\>'));
     });
+  });
+});
+
+// =============================================================================
+// Transform: h1-demote tests
+// =============================================================================
+
+describe('h1-demote transform', () => {
+  it('should demote H1 to H2', () => {
+    assert.strictEqual(demoteH1('# Title'), '## Title');
+  });
+
+  it('should demote all H1s in a document', () => {
+    const input = '# First\n\nSome text.\n\n# Second\n\nMore text.';
+    const result = demoteH1(input);
+    assert.ok(!result.includes('\n# '));
+    assert.ok(!result.startsWith('# '));
+    assert.ok(result.includes('## First'));
+    assert.ok(result.includes('## Second'));
+  });
+
+  it('should not modify H2 or deeper headings', () => {
+    const input = '## Already H2\n\n### H3';
+    assert.strictEqual(demoteH1(input), input);
+  });
+
+  it('should not modify H1 inside a fenced code block', () => {
+    const input = '```\n# not a heading\n```\n\n# real heading';
+    const result = demoteH1(input);
+    assert.ok(result.includes('# not a heading'));
+    assert.ok(result.includes('## real heading'));
+  });
+
+  it('should preserve the H1 title for front matter extraction', () => {
+    const converter = new GfmToMdxConverter({ addFrontMatter: true });
+    const result = converter.convert('# My Page\n\nContent.');
+    assert.ok(result.content.includes('title: My Page'));
+    assert.ok(result.content.includes('## My Page'));
+    assert.ok(!result.content.match(/^# My Page/m));
   });
 });
 

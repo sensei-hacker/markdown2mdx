@@ -28,6 +28,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WIKI_DIR="$(cd "$SCRIPT_DIR/../inavwiki" && pwd)"
 DOCS_SITE_DIR="$(cd "$DOCS_DIR" && pwd)"
 
+# Major version number (e.g. "7" from "7.1.2") — used to filter release notes
+MAJOR_VERSION="${VERSION%%.*}"
+
 VERSION_DIR="$OUTPUT_PARENT/versioned_docs/version-$VERSION"
 SIDEBAR_FILE="$OUTPUT_PARENT/versioned_sidebars/version-${VERSION}-sidebars.json"
 
@@ -107,8 +110,15 @@ for wiki_file in "$TMPDIR"/*.md; do
   # Handle root-level special files
   if [[ "$stem" =~ ^(welcome|Welcome)$ ]]; then
     out_file="$VERSION_DIR/welcome.md"
-  elif [[ "$stem" =~ ^(releasenotes|[0-9]+\.[0-9]+.*Release.*)$ ]]; then
-    # Put release notes in root of version dir
+  elif [[ "$stem" =~ ^[0-9]+\.[0-9]+.*[Rr]elease.*$ ]]; then
+    # Only include release notes whose major version matches this snapshot.
+    # e.g. for version 7.1.2, keep 7.0.0-Release-Notes and 7.1.0-Release-Notes
+    # but skip 6.x, 5.x, etc.
+    stem_major="${stem%%.*}"
+    if [[ "$stem_major" != "$MAJOR_VERSION" ]]; then
+      skipped=$((skipped + 1))
+      continue
+    fi
     out_file="$VERSION_DIR/$stem.md"
   else
     out_file="$VERSION_DIR/$category/$stem.md"

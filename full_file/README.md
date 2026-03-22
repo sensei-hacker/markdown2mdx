@@ -117,6 +117,7 @@ transform(content, ctx?) => string
 | Transform file | What it does |
 |---|---|
 | `admonitions.js` | Converts blockquote/HR-wrapped admonitions |
+| `h1-demote.js` | Demotes `# H1` to `## H2` (Docusaurus renders the front-matter title as H1) |
 | `html-fix.js` | Fixes void elements, class→className, table body |
 | `escape-jsx.js` | Escapes `<` and `{` in prose (O(n) scan) |
 | `horizontal-rules.js` | Converts `____` runs to `---` |

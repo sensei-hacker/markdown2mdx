@@ -10,6 +10,7 @@
 
 import { transform as stripTrailingWhitespace } from './transforms/trailing-whitespace.js';
 import { transform as convertAdmonitions }        from './transforms/admonitions.js';
+import { transform as demoteH1 }                  from './transforms/h1-demote.js';
 import { transform as fixHtml }                   from './transforms/html-fix.js';
 import { transform as escapeJsx }                 from './transforms/escape-jsx.js';
 import { transform as rewriteLinks }              from './transforms/links.js';
@@ -17,7 +18,8 @@ import { transform as rewriteImages }             from './transforms/images.js';
 import { transform as normalizeHorizontalRules }  from './transforms/horizontal-rules.js';
 import { transform as fixReversedLinks }          from './transforms/reversed-links.js';
 import { transform as addFrontMatter,
-         extractFrontMatter }                     from './transforms/front-matter.js';
+         extractFrontMatter,
+         extractTitle }                           from './transforms/front-matter.js';
 
 export { VOID_ELEMENTS } from './transforms/html-fix.js';
 
@@ -88,51 +90,59 @@ export class GfmToMdxConverter {
     const { frontMatter: existingFm, body } = extractFrontMatter(content);
     let result = body;
 
+    // Step 1b: Capture H1 title before it is demoted (used by front matter below)
+    const h1Title = extractTitle(result);
+
     // Step 2: Convert admonitions (>[!NOTE], **Note:**, ---\nWarning:\n---, etc.)
     if (this.options.convertAdmonitions) {
       result = convertAdmonitions(result);
     }
 
-    // Step 3: Fix HTML for JSX compatibility
+    // Step 3: Demote H1 headings to H2 (Docusaurus renders the front-matter
+    // title as H1; a # in the body would create a conflicting second H1)
+    result = demoteH1(result);
+
+    // Step 5: Fix HTML for JSX compatibility
     if (this.options.fixSelfClosingTags) {
       result = fixHtml(result);
     }
 
-    // Step 4: Escape JSX-problematic characters
+    // Step 6: Escape JSX-problematic characters
     if (this.options.escapeJsxChars) {
       result = escapeJsx(result);
     }
 
-    // Step 5: Normalize underscore separators → horizontal rules
+    // Step 7: Normalize underscore separators → horizontal rules
     result = normalizeHorizontalRules(result);
 
-    // Step 6: Rewrite wiki links to relative docs paths
+    // Step 8: Rewrite wiki links to relative docs paths
     if (this.options.rewriteLinks) {
       result = rewriteLinks(result, ctx);
     }
 
-    // Step 7: Rewrite GitHub image URLs to local paths
+    // Step 9: Rewrite GitHub image URLs to local paths
     if (this.options.rewriteImages) {
       result = rewriteImages(result, ctx);
     }
 
-    // Step 8: Strip trailing whitespace (wiki uses "  " for line breaks; manual strips them)
+    // Step 10: Strip trailing whitespace (wiki uses "  " for line breaks; manual strips them)
     if (this.options.stripTrailingWhitespace) {
       result = stripTrailingWhitespace(result);
     }
 
-    // Step 9: Fix reversed markdown links: (text)[url] → [text](url)
+    // Step 11: Fix reversed markdown links: (text)[url] → [text](url)
     result = fixReversedLinks(result);
 
-    // Step 10: Ensure file ends with a single newline
+    // Step 12: Ensure file ends with a single newline
     result = result.trimEnd() + '\n';
 
-    // Step 11: Add front matter
+    // Step 13: Add front matter
     if (existingFm && this.options.preserveExistingFrontMatter) {
       result = existingFm + '\n\n' + result;
     } else if (this.options.addFrontMatter) {
       result = addFrontMatter(result, {
         minimal: this.options.minimalFrontMatter,
+        title: opts.title || h1Title || undefined,
         stem: opts.stem,
         sidebarPosition: this.options.minimalFrontMatter ? undefined : opts.sidebarPosition,
         sidebarLabel: this.options.minimalFrontMatter ? undefined : opts.sidebarLabel,
