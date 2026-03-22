@@ -9,6 +9,7 @@
 import MarkdownIt from 'markdown-it';
 import { parse as parseHTML } from 'node-html-parser';
 import { LinkRewriter } from './link-rewriter.js';
+import { ImageRewriter } from './image-rewriter.js';
 
 // =============================================================================
 // Configuration
@@ -227,6 +228,7 @@ export class GfmToMdxConverter {
       escapeJsxChars: true,
       convertAdmonitions: true,
       rewriteLinks: false,       // When true, rewrite wiki URLs and [[links]]
+      rewriteImages: false,      // When true, rewrite GitHub image URLs to local paths
       fixSelfClosingTags: true,
       preserveExistingFrontMatter: true,
       verbose: false,
@@ -241,6 +243,7 @@ export class GfmToMdxConverter {
     this.admonitionConverter = new AdmonitionConverter();
     this.frontMatterGenerator = new FrontMatterGenerator();
     this.linkRewriter = null;
+    this.imageRewriter = this.options.rewriteImages ? new ImageRewriter(options.imageOptions || {}) : null;
     
     this.warnings = [];
     this.errors = [];
@@ -295,7 +298,16 @@ export class GfmToMdxConverter {
       }
     }
 
-    // Step 7: Handle front matter
+    // Step 7: Rewrite GitHub image URLs to local paths
+    if (this.options.rewriteImages && this.imageRewriter) {
+      const before = result;
+      result = this.imageRewriter.rewriteAll(result);
+      if (result !== before) {
+        this.changes.push({ type: 'image_rewrite', reason: 'GitHub image URLs rewritten to local paths' });
+      }
+    }
+
+    // Step 9: Handle front matter
     if (this.options.addFrontMatter) {
       const newFm = this.generateFrontMatter(result, options, existingFm);
       if (newFm) result = newFm + '\n\n' + result;

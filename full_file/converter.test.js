@@ -11,6 +11,7 @@ import {
   FrontMatterGenerator
 } from './converter.js';
 import { LinkRewriter } from './link-rewriter.js';
+import { ImageRewriter } from './image-rewriter.js';
 
 // =============================================================================
 // Test Fixtures - INAV-specific examples
@@ -634,6 +635,86 @@ describe('LinkRewriter', () => {
       const result = rewriter.rewriteAll(input);
       assert.ok(result.includes('Navigation-Mode-Return-to-Home.md'), 'Wiki URL rewritten');
       assert.ok(result.includes('Failsafe.md'), 'Double link rewritten');
+    });
+  });
+});
+
+// =============================================================================
+// ImageRewriter Tests
+// =============================================================================
+
+describe('ImageRewriter', () => {
+  const INAV_RAW_URL = 'https://raw.githubusercontent.com/iNavFlight/inav/master/docs/assets/images/diagram.png';
+  const IMGUR_URL = 'https://i.imgur.com/example.png';
+  const USER_IMAGES_URL = 'https://user-images.githubusercontent.com/12345/example.png';
+
+  describe('shouldRewrite', () => {
+    it('should rewrite iNavFlight raw.githubusercontent.com URLs', () => {
+      const r = new ImageRewriter();
+      assert.ok(r.shouldRewrite(INAV_RAW_URL));
+    });
+
+    it('should NOT rewrite imgur URLs', () => {
+      const r = new ImageRewriter();
+      assert.ok(!r.shouldRewrite(IMGUR_URL));
+    });
+
+    it('should NOT rewrite user-images.githubusercontent.com (user uploads)', () => {
+      const r = new ImageRewriter();
+      assert.ok(!r.shouldRewrite(USER_IMAGES_URL));
+    });
+  });
+
+  describe('rewriteAll - markdown images', () => {
+    it('should rewrite iNavFlight GitHub image URLs in markdown', () => {
+      const r = new ImageRewriter();
+      const input = `![Diagram](${INAV_RAW_URL})`;
+      const result = r.rewriteAll(input);
+      assert.ok(result.includes('/img/content/diagram.png'), `Got: ${result}`);
+      assert.ok(!result.includes('githubusercontent.com'), 'Should remove external URL');
+    });
+
+    it('should leave imgur images unchanged', () => {
+      const r = new ImageRewriter();
+      const input = `![Image](${IMGUR_URL})`;
+      const result = r.rewriteAll(input);
+      assert.strictEqual(result, input, 'Should not touch imgur URLs');
+    });
+
+    it('should add image to manifest', () => {
+      const r = new ImageRewriter();
+      r.rewriteAll(`![Diagram](${INAV_RAW_URL})`);
+      const manifest = r.getManifest();
+      assert.strictEqual(manifest.length, 1);
+      assert.strictEqual(manifest[0].url, INAV_RAW_URL);
+      assert.ok(manifest[0].localPath.includes('/img/content/'));
+    });
+
+    it('should handle multiple images in one file', () => {
+      const r = new ImageRewriter();
+      const input = `![A](${INAV_RAW_URL})\n![B](${IMGUR_URL})`;
+      const result = r.rewriteAll(input);
+      assert.ok(result.includes('/img/content/'), 'First image rewritten');
+      assert.ok(result.includes(IMGUR_URL), 'Imgur image kept');
+      assert.strictEqual(r.getManifest().length, 1, 'Only one image in manifest');
+    });
+  });
+
+  describe('rewriteAll - HTML img tags', () => {
+    it('should rewrite iNavFlight GitHub URLs in HTML img tags', () => {
+      const r = new ImageRewriter();
+      const input = `<img src="${INAV_RAW_URL}" alt="diagram" />`;
+      const result = r.rewriteAll(input);
+      assert.ok(result.includes('/img/content/'), `Got: ${result}`);
+    });
+  });
+
+  describe('custom imgBaseUrl', () => {
+    it('should use custom base URL when specified', () => {
+      const r = new ImageRewriter({ imgBaseUrl: '/static/images' });
+      const input = `![Diagram](${INAV_RAW_URL})`;
+      const result = r.rewriteAll(input);
+      assert.ok(result.includes('/static/images/'), `Got: ${result}`);
     });
   });
 });

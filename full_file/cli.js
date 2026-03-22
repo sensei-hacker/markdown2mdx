@@ -39,6 +39,9 @@ function parseArgs(args) {
     noAdmonitions: false,
     rewriteLinks: false,
     docsDir: null,
+    rewriteImages: false,
+    staticDir: null,
+    downloadImages: false,
     noEscape: false,
     noHtmlFix: false,
     sidebarStart: 1,
@@ -92,6 +95,19 @@ function parseArgs(args) {
 
       case '--docs-dir':
         options.docsDir = args[++i];
+        break;
+
+      case '--rewrite-images':
+        options.rewriteImages = true;
+        break;
+
+      case '--static-dir':
+        options.staticDir = args[++i];
+        break;
+
+      case '--download-images':
+        options.downloadImages = true;
+        options.rewriteImages = true;
         break;
 
       case '--no-admonitions':
@@ -344,6 +360,8 @@ async function main() {
     minimalFrontMatter: options.minimalFrontMatter,
     convertAdmonitions: !options.noAdmonitions,
     rewriteLinks: options.rewriteLinks,
+    rewriteImages: options.rewriteImages,
+    imageOptions: options.staticDir ? { staticDir: options.staticDir } : {},
     escapeJsxChars: !options.noEscape,
     fixSelfClosingTags: !options.noHtmlFix,
     validateHtml: !options.noHtmlFix,
