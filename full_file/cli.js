@@ -2,11 +2,11 @@
 
 /**
  * GFM to MDX Converter - CLI
- * 
+ *
  * Usage:
  *   gfm2mdx <input> [output] [options]
  *   gfm2mdx --dir <inputDir> <outputDir> [options]
- * 
+ *
  * Examples:
  *   gfm2mdx README.md                     # Convert single file, output to stdout
  *   gfm2mdx README.md README.mdx          # Convert single file to specific output
@@ -18,7 +18,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import { glob } from 'glob';
 import { GfmToMdxConverter } from './converter.js';
-import { buildPageMapping, LinkRewriter } from './link-rewriter.js';
+import { buildPageMapping, LinkRewriter } from './transforms/links.js';
+import { ImageRewriter } from './transforms/images.js';
 
 // =============================================================================
 // CLI Argument Parser
@@ -45,6 +46,7 @@ function parseArgs(args) {
     generateCategoryJson: false,
     noEscape: false,
     noHtmlFix: false,
+    linkBase: null,   // root dir for computing relative link paths
     sidebarStart: 1,
     recursive: true,
     extension: '.md',
@@ -117,6 +119,10 @@ function parseArgs(args) {
 
       case '--no-admonitions':
         options.noAdmonitions = true;
+        break;
+
+      case '--link-base':
+        options.linkBase = args[++i];
         break;
 
       case '--no-escape':
@@ -211,55 +217,61 @@ TRANSFORMATIONS:
 // File Processing
 // =============================================================================
 
-async function processFile(inputPath, outputPath, converter, options, sidebarPosition, pageMapping) {
+/**
+ * Compute the output file's path relative to the link-base directory.
+ * This tells the LinkRewriter where the output file sits in the docs tree
+ * so it can generate correct relative links.
+ *
+ * @param {string|null} outputPath  Absolute or relative output file path
+ * @param {object} options          CLI options (linkBase, docsDir)
+ * @param {string} stem             Filename stem (fallback)
+ * @returns {string}  Path relative to link base (e.g. 'features/Failsafe.md')
+ */
+function computeRelativeOutputPath(outputPath, options, stem) {
+  const absOutput = outputPath ? path.resolve(outputPath) : null;
+  const linkBase = options.linkBase
+    ? path.resolve(options.linkBase)
+    : options.docsDir
+      ? path.resolve(options.docsDir)
+      : null;
+
+  if (absOutput && linkBase) return path.relative(linkBase, absOutput);
+  if (absOutput) return path.basename(absOutput);
+  return stem + '.md';
+}
+
+async function processFile(inputPath, outputPath, converter, options, sidebarPosition, pageMapping, imageRewriter) {
   const content = await fs.readFile(inputPath, 'utf-8');
 
-  // Determine sidebar label from filename
-  const basename = path.basename(inputPath, path.extname(inputPath));
-  const sidebarLabel = basename.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  // Determine sidebar label and stem from filename
+  const stem = path.basename(inputPath, path.extname(inputPath));
 
   // Set up link rewriter if enabled
   if (options.rewriteLinks && pageMapping) {
-    // Use outputPath if available; fall back to input filename for relative link computation
-    const effectivePath = outputPath || path.basename(inputPath);
-    const outputBase = options.outputDir || (outputPath ? path.dirname(outputPath) : '');
-    const relOutputPath = outputBase ? path.relative(outputBase, effectivePath) : effectivePath;
+    const relOutputPath = computeRelativeOutputPath(outputPath, options, stem);
     converter.setLinkRewriter(new LinkRewriter(pageMapping, relOutputPath));
   }
 
+  if (options.rewriteImages && imageRewriter) {
+    converter.setImageRewriter(imageRewriter);
+  }
+
+  const sidebarLabel = stem.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   const result = converter.convert(content, {
     sidebarPosition,
     sidebarLabel,
+    stem,
   });
-
-  if (options.verbose) {
-    console.log(`\n📄 ${inputPath}`);
-    const summary = converter.getSummary();
-    if (summary.totalChanges > 0) {
-      console.log(`   Changes: ${summary.totalChanges} (${summary.escapes} escapes, ${summary.htmlFixes} HTML fixes)`);
-      for (const change of summary.changes) {
-        console.log(`   • ${change.reason}: "${change.original}" → "${change.replacement}"`);
-      }
-    }
-    if (summary.warnings > 0) {
-      console.log(`   ⚠️  Warnings: ${summary.warnings}`);
-      for (const w of converter.warnings) console.log(`      ${w}`);
-    }
-    if (summary.errors > 0) {
-      console.log(`   ❌ Errors: ${summary.errors}`);
-      for (const e of converter.errors) console.log(`      ${e}`);
-    }
-  }
 
   if (!options.dryRun && outputPath) {
     await fs.mkdir(path.dirname(outputPath), { recursive: true });
     await fs.writeFile(outputPath, result.content, 'utf-8');
     if (!options.quiet) {
-      console.log(`✅ ${inputPath} → ${outputPath}`);
+      console.log(`  ${inputPath} -> ${outputPath}`);
     }
   } else if (options.dryRun) {
     if (!options.quiet) {
-      console.log(`🔍 [dry-run] ${inputPath} → ${outputPath || 'stdout'}`);
+      console.log(`  [dry-run] ${inputPath} -> ${outputPath || 'stdout'}`);
     }
   } else {
     // Output to stdout
@@ -270,12 +282,12 @@ async function processFile(inputPath, outputPath, converter, options, sidebarPos
 }
 
 async function processDirectory(inputDir, outputDir, converter, options) {
-  const pattern = options.recursive 
+  const pattern = options.recursive
     ? `${inputDir}/**/*${options.extension}`
     : `${inputDir}/*${options.extension}`;
 
   const files = await glob(pattern, { nodir: true });
-  
+
   if (files.length === 0) {
     console.error(`No ${options.extension} files found in ${inputDir}`);
     process.exit(1);
@@ -305,10 +317,6 @@ async function processDirectory(inputDir, outputDir, converter, options) {
     });
   }
 
-  let totalChanges = 0;
-  let totalWarnings = 0;
-  let totalErrors = 0;
-
   // Build page mapping for link rewriting if requested
   let pageMapping = null;
   if (options.rewriteLinks) {
@@ -318,7 +326,13 @@ async function processDirectory(inputDir, outputDir, converter, options) {
     if (!options.quiet) console.log(`  Found ${pageMapping.size} page mappings\n`);
   }
 
+  // Create image rewriter shared across all files
+  const imageRewriter = options.rewriteImages
+    ? new ImageRewriter(options.staticDir ? { staticDir: options.staticDir } : {})
+    : null;
+
   let categoryPosition = 1;
+  let filesProcessed = 0;
 
   for (const [dir, dirFiles] of byDir) {
     let position = options.sidebarStart;
@@ -336,33 +350,22 @@ async function processDirectory(inputDir, outputDir, converter, options) {
         const categoryJson = { label, position: categoryPosition++ };
         await fs.mkdir(outputSubDir, { recursive: true });
         await fs.writeFile(categoryPath, JSON.stringify(categoryJson, null, 2) + '\n', 'utf-8');
-        if (!options.quiet) console.log(`📁 _category_.json → ${categoryPath}`);
+        if (!options.quiet) console.log(`  _category_.json -> ${categoryPath}`);
       }
     }
 
     for (const inputPath of dirFiles) {
       const relativePath = path.relative(inputDir, inputPath);
       const outputPath = path.join(outputDir, relativePath);
-
-      const result = await processFile(inputPath, outputPath, converter, options, position, pageMapping);
-
-      const summary = converter.getSummary();
-      totalChanges += summary.totalChanges;
-      totalWarnings += summary.warnings;
-      totalErrors += summary.errors;
-
+      await processFile(inputPath, outputPath, converter, options, position, pageMapping, imageRewriter);
       position++;
+      filesProcessed++;
     }
   }
 
   if (!options.quiet) {
-    console.log(`\n${'─'.repeat(50)}`);
-    console.log(`📊 Summary:`);
-    console.log(`   Files processed: ${files.length}`);
-    console.log(`   Total changes: ${totalChanges}`);
-    if (totalWarnings > 0) console.log(`   ⚠️  Warnings: ${totalWarnings}`);
-    if (totalErrors > 0) console.log(`   ❌ Errors: ${totalErrors}`);
-    if (options.dryRun) console.log(`\n   (dry-run mode - no files written)`);
+    console.log(`\nDone: ${filesProcessed} files processed`);
+    if (options.dryRun) console.log(`  (dry-run mode - no files written)`);
   }
 }
 
@@ -385,10 +388,8 @@ async function main() {
     convertAdmonitions: !options.noAdmonitions,
     rewriteLinks: options.rewriteLinks,
     rewriteImages: options.rewriteImages,
-    imageOptions: options.staticDir ? { staticDir: options.staticDir } : {},
     escapeJsxChars: !options.noEscape,
     fixSelfClosingTags: !options.noHtmlFix,
-    validateHtml: !options.noHtmlFix,
     verbose: options.verbose,
   });
 
@@ -408,7 +409,10 @@ async function main() {
       if (options.rewriteLinks && options.docsDir) {
         pageMapping = buildPageMapping(options.docsDir);
       }
-      await processFile(options.input, options.output, converter, options, options.sidebarStart, pageMapping);
+      const imageRewriter = options.rewriteImages
+        ? new ImageRewriter(options.staticDir ? { staticDir: options.staticDir } : {})
+        : null;
+      await processFile(options.input, options.output, converter, options, options.sidebarStart, pageMapping, imageRewriter);
     }
   } catch (err) {
     console.error(`Error: ${err.message}`);

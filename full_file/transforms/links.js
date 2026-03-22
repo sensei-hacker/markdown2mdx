@@ -1,16 +1,43 @@
 /**
- * Link Rewriter for GFM to MDX Converter
+ * Transform: Wiki Link Rewriting
  *
  * Rewrites GitHub wiki URLs and [[wiki links]] to relative Docusaurus paths.
- * Requires a page mapping (wiki page name → docs relative path) built from
- * the existing docs directory structure.
+ * Also converts root-relative GitHub links (/iNavFlight/...) to full URLs
+ * so they don't break when hosted outside github.com.
+ *
+ * Requires ctx.linkRewriter (a LinkRewriter instance) to be provided.
+ * The LinkRewriter is created externally (by cli.js) because it depends on
+ * a page mapping built by scanning the docs directory — a one-time setup
+ * step shared across all files in a conversion run.
+ *
+ * Interface: transform(content, ctx?) => string
+ * ctx: { linkRewriter? }
+ *
+ * Also exports: LinkRewriter, buildPageMapping  (used by cli.js)
  */
 
 import path from 'path';
 import fs from 'fs';
 
 // =============================================================================
-// Mapping Builder
+// Transform function
+// =============================================================================
+
+/**
+ * Rewrite wiki links to relative doc paths.
+ *
+ * @param {string} content
+ * @param {object} ctx
+ * @param {LinkRewriter} [ctx.linkRewriter]
+ * @returns {string}
+ */
+export function transform(content, ctx = {}) {
+  if (!ctx.linkRewriter) return content;
+  return ctx.linkRewriter.rewriteAll(content);
+}
+
+// =============================================================================
+// Page Mapping Builder
 // =============================================================================
 
 /**
@@ -33,8 +60,7 @@ export function buildPageMapping(docsDir) {
         const relPath = path.join(relBase, entry.name);
 
         // Store under multiple normalizations for fuzzy matching
-        const variants = normalizeVariants(stem);
-        for (const key of variants) {
+        for (const key of normalizeVariants(stem)) {
           if (!mapping.has(key)) mapping.set(key, relPath);
         }
       }
@@ -66,7 +92,7 @@ function normalizeVariants(name) {
 }
 
 // =============================================================================
-// Link Rewriter
+// LinkRewriter Class
 // =============================================================================
 
 export class LinkRewriter {
@@ -137,9 +163,7 @@ export class LinkRewriter {
     return rel;
   }
 
-  /**
-   * Build the href string for a found link.
-   */
+  /** Build the href string for a found link. */
   buildHref(found) {
     const base = this.toRelative(found.targetPath);
     return found.anchor ? `${base}#${found.anchor}` : base;
@@ -147,18 +171,33 @@ export class LinkRewriter {
 
   /**
    * Rewrite GitHub wiki URLs in markdown link syntax.
-   * [text](https://github.com/iNavFlight/inav/wiki/PageName#anchor)
+   * Handles both absolute and relative GitHub wiki URLs:
+   *   [text](https://github.com/iNavFlight/inav/wiki/PageName#anchor)
+   *   [text](/iNavFlight/inav/wiki/PageName)
    *   → [text](./relative/path.md#anchor)
    */
   rewriteWikiUrls(content) {
-    return content.replace(
+    // Absolute: https://github.com/iNavFlight/inav/wiki/...
+    content = content.replace(
       /\[([^\]]*)\]\(https?:\/\/github\.com\/iNavFlight\/inav\/wiki\/([^)\s]+)\)/g,
       (match, text, pageAndAnchor) => {
         const found = this.lookup(pageAndAnchor);
-        if (!found) return match; // leave unknown links as-is
+        if (!found) return match;
         return `[${text}](${this.buildHref(found)})`;
       }
     );
+
+    // Relative: /iNavFlight/inav/wiki/... (root-relative GitHub wiki links)
+    content = content.replace(
+      /\[([^\]]*)\]\(\/iNavFlight\/inav\/wiki\/([^)\s]+)\)/g,
+      (match, text, pageAndAnchor) => {
+        const found = this.lookup(pageAndAnchor);
+        if (!found) return match;
+        return `[${text}](${this.buildHref(found)})`;
+      }
+    );
+
+    return content;
   }
 
   /**
@@ -180,13 +219,30 @@ export class LinkRewriter {
   }
 
   /**
-   * Apply all link rewrites.
+   * Fix root-relative GitHub links that the wiki uses because it was hosted on
+   * github.com (where "/" is the domain root).  In our Docusaurus site, those
+   * paths would resolve to our own domain, producing broken links.
+   *
+   * Converts:
+   *   [text](/iNavFlight/inav/releases/...)  →  [text](https://github.com/iNavFlight/inav/releases/...)
+   *   [text](/iNavFlight/inav/blob/...)       →  [text](https://github.com/iNavFlight/inav/blob/...)
+   *
+   * Does NOT touch /iNavFlight/inav/wiki/... — those are handled by rewriteWikiUrls.
    */
+  fixRootRelativeGitHubLinks(content) {
+    return content.replace(
+      /\[([^\]]*)\]\((\/(iNavFlight|inav-configurator)\/.+?)\)/g,
+      (match, text, linkPath) => `[${text}](https://github.com${linkPath})`
+    );
+  }
+
+  /** Apply all link rewrites. */
   rewriteAll(content) {
     content = this.rewriteWikiUrls(content);
     content = this.rewriteDoubleLinks(content);
+    content = this.fixRootRelativeGitHubLinks(content);
     return content;
   }
 }
 
-export default LinkRewriter;
+export default transform;

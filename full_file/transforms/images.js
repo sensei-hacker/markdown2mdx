@@ -1,12 +1,42 @@
 /**
- * Image Rewriter for GFM to MDX Converter
+ * Transform: Image URL Rewriting
  *
  * Rewrites GitHub-hosted image URLs to local /img/content/... paths.
- * Optionally downloads images to the static directory.
+ * Also rewrites wiki-relative images/X.jpg paths to /img/content/X.jpg.
+ *
+ * Requires ctx.imageRewriter (an ImageRewriter instance) to be provided.
+ * The ImageRewriter is created externally (by cli.js) because it accumulates
+ * a download manifest across all files in a conversion run.
+ *
+ * Interface: transform(content, ctx?) => string
+ * ctx: { imageRewriter? }
+ *
+ * Also exports: ImageRewriter  (used by cli.js)
  */
 
 import path from 'path';
 import fs from 'fs';
+
+// =============================================================================
+// Transform function
+// =============================================================================
+
+/**
+ * Rewrite image URLs.
+ *
+ * @param {string} content
+ * @param {object} ctx
+ * @param {ImageRewriter} [ctx.imageRewriter]
+ * @returns {string}
+ */
+export function transform(content, ctx = {}) {
+  if (!ctx.imageRewriter) return content;
+  return ctx.imageRewriter.rewriteAll(content);
+}
+
+// =============================================================================
+// Constants
+// =============================================================================
 
 // URL patterns that should be rewritten to local paths
 const GITHUB_IMAGE_PATTERNS = [
@@ -26,7 +56,7 @@ const EXTERNAL_HOSTS_KEEP = [
 ];
 
 // =============================================================================
-// Image Rewriter
+// ImageRewriter Class
 // =============================================================================
 
 export class ImageRewriter {
@@ -58,6 +88,9 @@ export class ImageRewriter {
       // Rewrite iNavFlight GitHub raw content
       if (host === 'raw.githubusercontent.com' && parsed.pathname.includes('/iNavFlight/')) return true;
 
+      // Rewrite GitHub cloud-hosted images (older wiki uploads used this domain)
+      if (host === 'cloud.githubusercontent.com') return true;
+
       // Rewrite iNavFlight wiki assets
       if ((host === 'github.com') && parsed.pathname.includes('/iNavFlight/') && parsed.pathname.includes('/wiki/')) return true;
 
@@ -74,7 +107,6 @@ export class ImageRewriter {
     try {
       const parsed = new URL(url);
       const basename = path.basename(parsed.pathname);
-      // Decode URL encoding in filenames
       return decodeURIComponent(basename);
     } catch {
       return null;
@@ -103,16 +135,31 @@ export class ImageRewriter {
   }
 
   /**
+   * Rewrite wiki-relative images/X.jpg paths to /img/content/X.jpg.
+   * These are images stored in the wiki git repo's images/ directory.
+   */
+  rewriteWikiRelativeUrl(url) {
+    if (url.startsWith('images/')) {
+      const filename = url.slice('images/'.length);
+      return `${this.imgBaseUrl}/${filename}`;
+    }
+    return null;
+  }
+
+  /**
    * Rewrite all image URLs in markdown content.
    * Handles both:
    *   ![alt](url) - standard markdown images
    *   <img src="url"> - HTML images
+   * Also rewrites wiki-relative images/X.jpg paths.
    */
   rewriteAll(content) {
     // Standard markdown images: ![alt](url)
     content = content.replace(
       /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,
       (match, alt, url) => {
+        const wikiRelative = this.rewriteWikiRelativeUrl(url);
+        if (wikiRelative) return `![${alt}](${wikiRelative})`;
         const rewritten = this.rewriteUrl(url);
         if (rewritten === url) return match;
         return `![${alt}](${rewritten})`;
@@ -123,6 +170,8 @@ export class ImageRewriter {
     content = content.replace(
       /<img\b([^>]*)\bsrc=["']([^"']+)["']([^>]*)>/gi,
       (match, before, url, after) => {
+        const wikiRelative = this.rewriteWikiRelativeUrl(url);
+        if (wikiRelative) return `<img${before}src="${wikiRelative}"${after}>`;
         const rewritten = this.rewriteUrl(url);
         if (rewritten === url) return match;
         return `<img${before}src="${rewritten}"${after}>`;
@@ -170,19 +219,15 @@ export class ImageRewriter {
     return { downloaded, failed };
   }
 
-  /**
-   * Get the manifest of images that were rewritten (need downloading).
-   */
+  /** Get the manifest of images that were rewritten (need downloading). */
   getManifest() {
     return [...this.imageManifest];
   }
 
-  /**
-   * Write the manifest to a JSON file.
-   */
+  /** Write the manifest to a JSON file. */
   writeManifest(outputPath) {
     fs.writeFileSync(outputPath, JSON.stringify(this.imageManifest, null, 2) + '\n');
   }
 }
 
-export default ImageRewriter;
+export default transform;
