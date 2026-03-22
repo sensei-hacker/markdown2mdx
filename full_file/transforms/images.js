@@ -94,6 +94,9 @@ export class ImageRewriter {
       // Rewrite iNavFlight wiki assets
       if ((host === 'github.com') && parsed.pathname.includes('/iNavFlight/') && parsed.pathname.includes('/wiki/')) return true;
 
+      // Rewrite quadmeup.com (hosts INAV release banner images and tutorials)
+      if (host === 'quadmeup.com') return true;
+
       return false;
     } catch {
       return false;

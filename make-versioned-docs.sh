@@ -77,6 +77,7 @@ converter_args=(
 
 converted=0
 skipped=0
+release_note_files=()   # GFM paths of major-version release notes, combined later
 
 for wiki_file in "$TMPDIR"/*.md; do
   stem="$(basename "$wiki_file" .md)"
@@ -111,15 +112,16 @@ for wiki_file in "$TMPDIR"/*.md; do
   if [[ "$stem" =~ ^(welcome|Welcome)$ ]]; then
     out_file="$VERSION_DIR/welcome.md"
   elif [[ "$stem" =~ ^[0-9]+\.[0-9]+.*[Rr]elease.*$ ]]; then
-    # Only include release notes whose major version matches this snapshot.
-    # e.g. for version 7.1.2, keep 7.0.0-Release-Notes and 7.1.0-Release-Notes
-    # but skip 6.x, 5.x, etc.
+    # Collect major-version release notes for the combined tabbed page.
+    # Skip other versions entirely.
     stem_major="${stem%%.*}"
     if [[ "$stem_major" != "$MAJOR_VERSION" ]]; then
       skipped=$((skipped + 1))
       continue
     fi
-    out_file="$VERSION_DIR/$stem.md"
+    release_note_files+=("$wiki_file")
+    skipped=$((skipped + 1))  # not converted individually
+    continue
   else
     out_file="$VERSION_DIR/$category/$stem.md"
   fi
@@ -132,7 +134,18 @@ done
 echo "  Converted: $converted files"
 echo "  Skipped: $skipped files (sidebars, home, etc.)"
 
-# Step 4: Write versioned sidebar
+# Step 4: Combine release notes into a single tabbed MDX page
+if [ ${#release_note_files[@]} -gt 0 ]; then
+  release_notes_out="$VERSION_DIR/Release-Notes.md"
+  node "$SCRIPT_DIR/full_file/combine-release-notes.js" \
+    --major "$MAJOR_VERSION" \
+    --output "$release_notes_out" \
+    --static-dir "$DOCS_SITE_DIR/static" \
+    "${release_note_files[@]}"
+  echo "  Combined ${#release_note_files[@]} release note(s) → $release_notes_out"
+fi
+
+# Step 6: Write versioned sidebar
 cat > "$SIDEBAR_FILE" <<'EOF'
 {
   "documentationSidebar": [
@@ -145,7 +158,7 @@ cat > "$SIDEBAR_FILE" <<'EOF'
 EOF
 echo "  Wrote: $SIDEBAR_FILE"
 
-# Step 5: Generate _category_.json files
+# Step 7: Generate _category_.json files
 for cat_dir in quickstart features advanced legacyinfo; do
   cat_path="$VERSION_DIR/$cat_dir"
   if [ -d "$cat_path" ] && [ "$(ls -A "$cat_path")" ]; then

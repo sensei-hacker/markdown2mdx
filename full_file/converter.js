@@ -142,7 +142,7 @@ export class GfmToMdxConverter {
     } else if (this.options.addFrontMatter) {
       result = addFrontMatter(result, {
         minimal: this.options.minimalFrontMatter,
-        title: opts.title || h1Title || undefined,
+        title: opts.title || (opts.stem ? undefined : h1Title),
         stem: opts.stem,
         sidebarPosition: this.options.minimalFrontMatter ? undefined : opts.sidebarPosition,
         sidebarLabel: this.options.minimalFrontMatter ? undefined : opts.sidebarLabel,
