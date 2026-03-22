@@ -8,6 +8,7 @@
 
 import MarkdownIt from 'markdown-it';
 import { parse as parseHTML } from 'node-html-parser';
+import { LinkRewriter } from './link-rewriter.js';
 
 // =============================================================================
 // Configuration
@@ -225,20 +226,34 @@ export class GfmToMdxConverter {
       validateHtml: true,
       escapeJsxChars: true,
       convertAdmonitions: true,
+      rewriteLinks: false,       // When true, rewrite wiki URLs and [[links]]
       fixSelfClosingTags: true,
       preserveExistingFrontMatter: true,
       verbose: false,
       ...options
     };
 
+    // Link rewriter is set externally via setLinkRewriter() when rewriteLinks is enabled
+    this.linkRewriter = null;
+
     this.md = new MarkdownIt({ html: true, linkify: true, typographer: false, breaks: false });
     this.htmlFixer = new HtmlFixer();
     this.admonitionConverter = new AdmonitionConverter();
     this.frontMatterGenerator = new FrontMatterGenerator();
+    this.linkRewriter = null;
     
     this.warnings = [];
     this.errors = [];
     this.changes = [];
+  }
+
+  /**
+   * Set the link rewriter for this converter instance.
+   * Call this before convert() when rewriteLinks is enabled.
+   * @param {LinkRewriter} rewriter
+   */
+  setLinkRewriter(rewriter) {
+    this.linkRewriter = rewriter;
   }
 
   convert(content, options = {}) {
@@ -271,7 +286,16 @@ export class GfmToMdxConverter {
       result = this.admonitionConverter.convertAll(result);
     }
 
-    // Step 6: Handle front matter
+    // Step 6: Rewrite wiki links to relative docs paths
+    if (this.options.rewriteLinks && this.linkRewriter) {
+      const before = result;
+      result = this.linkRewriter.rewriteAll(result);
+      if (result !== before) {
+        this.changes.push({ type: 'link_rewrite', reason: 'Wiki links rewritten to relative paths' });
+      }
+    }
+
+    // Step 7: Handle front matter
     if (this.options.addFrontMatter) {
       const newFm = this.generateFrontMatter(result, options, existingFm);
       if (newFm) result = newFm + '\n\n' + result;

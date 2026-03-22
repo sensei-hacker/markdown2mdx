@@ -18,6 +18,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { glob } from 'glob';
 import { GfmToMdxConverter } from './converter.js';
+import { buildPageMapping, LinkRewriter } from './link-rewriter.js';
 
 // =============================================================================
 // CLI Argument Parser
@@ -36,6 +37,8 @@ function parseArgs(args) {
     noFrontMatter: false,
     minimalFrontMatter: false,
     noAdmonitions: false,
+    rewriteLinks: false,
+    docsDir: null,
     noEscape: false,
     noHtmlFix: false,
     sidebarStart: 1,
@@ -81,6 +84,14 @@ function parseArgs(args) {
 
       case '--minimal-front-matter':
         options.minimalFrontMatter = true;
+        break;
+
+      case '--rewrite-links':
+        options.rewriteLinks = true;
+        break;
+
+      case '--docs-dir':
+        options.docsDir = args[++i];
         break;
 
       case '--no-admonitions':
@@ -179,12 +190,21 @@ TRANSFORMATIONS:
 // File Processing
 // =============================================================================
 
-async function processFile(inputPath, outputPath, converter, options, sidebarPosition) {
+async function processFile(inputPath, outputPath, converter, options, sidebarPosition, pageMapping) {
   const content = await fs.readFile(inputPath, 'utf-8');
-  
+
   // Determine sidebar label from filename
   const basename = path.basename(inputPath, path.extname(inputPath));
   const sidebarLabel = basename.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+  // Set up link rewriter if enabled
+  if (options.rewriteLinks && pageMapping) {
+    // Use outputPath if available; fall back to input filename for relative link computation
+    const effectivePath = outputPath || path.basename(inputPath);
+    const outputBase = options.outputDir || (outputPath ? path.dirname(outputPath) : '');
+    const relOutputPath = outputBase ? path.relative(outputBase, effectivePath) : effectivePath;
+    converter.setLinkRewriter(new LinkRewriter(pageMapping, relOutputPath));
+  }
 
   const result = converter.convert(content, {
     sidebarPosition,
@@ -268,20 +288,29 @@ async function processDirectory(inputDir, outputDir, converter, options) {
   let totalWarnings = 0;
   let totalErrors = 0;
 
+  // Build page mapping for link rewriting if requested
+  let pageMapping = null;
+  if (options.rewriteLinks) {
+    const baseDocsDir = options.docsDir || outputDir;
+    if (!options.quiet) console.log(`Building page mapping from ${baseDocsDir}...`);
+    pageMapping = buildPageMapping(baseDocsDir);
+    if (!options.quiet) console.log(`  Found ${pageMapping.size} page mappings\n`);
+  }
+
   for (const [dir, dirFiles] of byDir) {
     let position = options.sidebarStart;
-    
+
     for (const inputPath of dirFiles) {
       const relativePath = path.relative(inputDir, inputPath);
       const outputPath = path.join(outputDir, relativePath);
-      
-      const result = await processFile(inputPath, outputPath, converter, options, position);
-      
+
+      const result = await processFile(inputPath, outputPath, converter, options, position, pageMapping);
+
       const summary = converter.getSummary();
       totalChanges += summary.totalChanges;
       totalWarnings += summary.warnings;
       totalErrors += summary.errors;
-      
+
       position++;
     }
   }
@@ -314,6 +343,7 @@ async function main() {
     addFrontMatter: !options.noFrontMatter,
     minimalFrontMatter: options.minimalFrontMatter,
     convertAdmonitions: !options.noAdmonitions,
+    rewriteLinks: options.rewriteLinks,
     escapeJsxChars: !options.noEscape,
     fixSelfClosingTags: !options.noHtmlFix,
     validateHtml: !options.noHtmlFix,
@@ -332,7 +362,11 @@ async function main() {
         console.error('Error: No input file specified');
         process.exit(1);
       }
-      await processFile(options.input, options.output, converter, options, options.sidebarStart);
+      let pageMapping = null;
+      if (options.rewriteLinks && options.docsDir) {
+        pageMapping = buildPageMapping(options.docsDir);
+      }
+      await processFile(options.input, options.output, converter, options, options.sidebarStart, pageMapping);
     }
   } catch (err) {
     console.error(`Error: ${err.message}`);

@@ -10,6 +10,7 @@ import {
   AdmonitionConverter,
   FrontMatterGenerator
 } from './converter.js';
+import { LinkRewriter } from './link-rewriter.js';
 
 // =============================================================================
 // Test Fixtures - INAV-specific examples
@@ -528,6 +529,111 @@ describe('FrontMatterGenerator', () => {
       const desc = generator.extractDescription(content, 50);
       assert.ok(desc.length <= 50);
       assert.ok(desc.endsWith('...'));
+    });
+  });
+});
+
+// =============================================================================
+// LinkRewriter Tests
+// =============================================================================
+
+describe('LinkRewriter', () => {
+  // Sample mapping: normalized key → relative docs path
+  const sampleMapping = new Map([
+    ['failsafe', 'features/Failsafe.md'],
+    ['navigation-modes', 'features/Navigation-modes.md'],
+    ['navigation-mode-return-to-home', 'features/Navigation-Mode-Return-to-Home.md'],
+    ['sensor-calibration', 'quickstart/Sensor-calibration.md'],
+    ['gps-and-compass-setup', 'quickstart/GPS--and-Compass-setup.md'],
+    ['inav-remote-management-control-and-telemetry', 'advanced/INAV-remote-management-control-and-telemetry.md'],
+    ['inavflight-missions', 'features/iNavFlight-Missions.md'],
+  ]);
+
+  describe('rewriteWikiUrls', () => {
+    it('should rewrite simple GitHub wiki URL', () => {
+      const rewriter = new LinkRewriter(sampleMapping, 'features/Failsafe.md');
+      const input = '[Failsafe](https://github.com/iNavFlight/inav/wiki/Failsafe)';
+      const result = rewriter.rewriteWikiUrls(input);
+      assert.ok(result.includes('./Failsafe.md'), `Expected relative link, got: ${result}`);
+    });
+
+    it('should rewrite wiki URL with anchor', () => {
+      const rewriter = new LinkRewriter(sampleMapping, 'features/Failsafe.md');
+      const input = '[Setup](https://github.com/iNavFlight/inav/wiki/GPS-and-Compass-setup#installing-the-gnss-unit---antenna-orientation)';
+      const result = rewriter.rewriteWikiUrls(input);
+      assert.ok(result.includes('.md#installing'), `Expected anchor preserved, got: ${result}`);
+    });
+
+    it('should rewrite wiki URL with colon in page name', () => {
+      const rewriter = new LinkRewriter(sampleMapping, 'features/Failsafe.md');
+      const input = '[RTH](https://github.com/iNavFlight/inav/wiki/Navigation-Mode:-Return-to-Home)';
+      const result = rewriter.rewriteWikiUrls(input);
+      assert.ok(result.includes('Navigation-Mode-Return-to-Home.md'), `Expected colon-normalized link, got: ${result}`);
+    });
+
+    it('should compute relative path from a different subdirectory', () => {
+      // Current file is in quickstart/, target is in features/
+      const rewriter = new LinkRewriter(sampleMapping, 'quickstart/Sensor-calibration.md');
+      const input = '[Failsafe](https://github.com/iNavFlight/inav/wiki/Failsafe)';
+      const result = rewriter.rewriteWikiUrls(input);
+      assert.ok(result.includes('../features/Failsafe.md'), `Expected cross-directory path, got: ${result}`);
+    });
+
+    it('should leave unknown wiki links unchanged', () => {
+      const rewriter = new LinkRewriter(sampleMapping, 'features/Failsafe.md');
+      const input = '[Unknown](https://github.com/iNavFlight/inav/wiki/NonExistent-Page)';
+      const result = rewriter.rewriteWikiUrls(input);
+      assert.ok(result.includes('wiki/NonExistent-Page'), 'Should keep unknown links unchanged');
+    });
+
+    it('should not modify non-wiki GitHub links', () => {
+      const rewriter = new LinkRewriter(sampleMapping, 'features/Failsafe.md');
+      const input = '[Setting](https://github.com/iNavFlight/inav/blob/master/docs/Settings.md#failsafe_delay)';
+      const result = rewriter.rewriteWikiUrls(input);
+      assert.strictEqual(result, input, 'Should not touch blob/Settings links');
+    });
+
+    it('should rewrite wiki URL with comma in page name', () => {
+      const rewriter = new LinkRewriter(sampleMapping, 'features/Failsafe.md');
+      const input = '[INAV Remote](https://github.com/iNavFlight/inav/wiki/INAV-Remote-Management,-Control-and-Telemetry#follow-me-gcs-nav)';
+      const result = rewriter.rewriteWikiUrls(input);
+      assert.ok(result.includes('INAV-remote-management-control-and-telemetry.md'), `Expected comma-normalized link, got: ${result}`);
+      assert.ok(result.includes('#follow-me-gcs-nav'), 'Should preserve anchor');
+    });
+  });
+
+  describe('rewriteDoubleLinks', () => {
+    it('should rewrite [[PageName]] style links', () => {
+      const rewriter = new LinkRewriter(sampleMapping, 'features/Navigation-modes.md');
+      const input = '[[Failsafe]]';
+      const result = rewriter.rewriteDoubleLinks(input);
+      assert.ok(result.startsWith('[Failsafe]'), 'Should produce markdown link with text');
+      assert.ok(result.includes('Failsafe.md'), 'Should include target path');
+    });
+
+    it('should rewrite [[display|PageName]] style links', () => {
+      const rewriter = new LinkRewriter(sampleMapping, 'features/Navigation-modes.md');
+      const input = '[[wiki missions page|iNavFlight-Missions]]';
+      const result = rewriter.rewriteDoubleLinks(input);
+      assert.ok(result.startsWith('[wiki missions page]'), 'Should use display text');
+      assert.ok(result.includes('.md'), 'Should include .md extension');
+    });
+
+    it('should leave unknown [[links]] unchanged', () => {
+      const rewriter = new LinkRewriter(sampleMapping, 'features/Navigation-modes.md');
+      const input = '[[NonExistent-Page]]';
+      const result = rewriter.rewriteDoubleLinks(input);
+      assert.strictEqual(result, input, 'Should leave unknown double links unchanged');
+    });
+  });
+
+  describe('rewriteAll', () => {
+    it('should apply both wiki URL and double-link rewrites', () => {
+      const rewriter = new LinkRewriter(sampleMapping, 'features/Failsafe.md');
+      const input = 'See [RTH](https://github.com/iNavFlight/inav/wiki/Navigation-Mode:-Return-to-Home) and [[Failsafe]].';
+      const result = rewriter.rewriteAll(input);
+      assert.ok(result.includes('Navigation-Mode-Return-to-Home.md'), 'Wiki URL rewritten');
+      assert.ok(result.includes('Failsafe.md'), 'Double link rewritten');
     });
   });
 });
