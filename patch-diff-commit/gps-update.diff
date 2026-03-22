@@ -1,0 +1,24 @@
+diff --git a/wiki/GPS-Configuration.md b/wiki/GPS-Configuration.md
+index abc1234..def5678 100644
+--- a/wiki/GPS-Configuration.md
++++ b/wiki/GPS-Configuration.md
+@@ -1,7 +1,9 @@
+ # GPS Configuration
+ 
+-GPS navigation model: Pedestrian, Automotive, Air<1g, Air<2g, Air<4g.
+-Default is AIR_2G.
++GPS navigation model: Pedestrian, Automotive, Air<1g, Air<2g, Air<4g, Air<8g.
++Default is AIR_2G. For most fixed-wing aircraft, Air<2g is recommended.
++
++**New in 4.1:** Added Air<8g mode for high-speed aircraft.
+ 
+ ## Parameters
+ 
+@@ -9,6 +11,7 @@ Default is AIR_2G.
+ |-----------|-------|---------|
+ | gps_model | {0-4} | 3 |
+ | gps_min_sats | {5-20} | 6 |
++| gps_timeout | {1-30} | 5 |
+ 
+ ## Code Example
+ 

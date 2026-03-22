@@ -1,0 +1,5 @@
+# Apply a GFM diff to its corresponding MDX file
+./src/cli.js wiki/GPS.md docs/gps.mdx changes.diff
+
+# Or pipe from git
+git diff HEAD~1 -- wiki/GPS.md | ./src/cli.js wiki/GPS.md docs/gps.mdx --diff-stdin
