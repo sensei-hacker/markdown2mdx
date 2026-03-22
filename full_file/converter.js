@@ -289,7 +289,10 @@ export class GfmToMdxConverter {
       result = this.admonitionConverter.convertAll(result);
     }
 
-    // Step 6: Rewrite wiki links to relative docs paths
+    // Step 6: Normalize underscore separators to standard horizontal rules
+    result = result.replace(/^_{4,}\s*$/gm, '---');
+
+    // Step 8: Rewrite wiki links to relative docs paths
     if (this.options.rewriteLinks && this.linkRewriter) {
       const before = result;
       result = this.linkRewriter.rewriteAll(result);
@@ -298,7 +301,7 @@ export class GfmToMdxConverter {
       }
     }
 
-    // Step 7: Rewrite GitHub image URLs to local paths
+    // Step 9: Rewrite GitHub image URLs to local paths
     if (this.options.rewriteImages && this.imageRewriter) {
       const before = result;
       result = this.imageRewriter.rewriteAll(result);
@@ -307,7 +310,7 @@ export class GfmToMdxConverter {
       }
     }
 
-    // Step 9: Handle front matter
+    // Step 11: Handle front matter
     if (this.options.addFrontMatter) {
       const newFm = this.generateFrontMatter(result, options, existingFm);
       if (newFm) result = newFm + '\n\n' + result;

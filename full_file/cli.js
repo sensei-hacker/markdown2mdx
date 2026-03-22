@@ -42,6 +42,7 @@ function parseArgs(args) {
     rewriteImages: false,
     staticDir: null,
     downloadImages: false,
+    generateCategoryJson: false,
     noEscape: false,
     noHtmlFix: false,
     sidebarStart: 1,
@@ -108,6 +109,10 @@ function parseArgs(args) {
       case '--download-images':
         options.downloadImages = true;
         options.rewriteImages = true;
+        break;
+
+      case '--category-json':
+        options.generateCategoryJson = true;
         break;
 
       case '--no-admonitions':
@@ -313,8 +318,27 @@ async function processDirectory(inputDir, outputDir, converter, options) {
     if (!options.quiet) console.log(`  Found ${pageMapping.size} page mappings\n`);
   }
 
+  let categoryPosition = 1;
+
   for (const [dir, dirFiles] of byDir) {
     let position = options.sidebarStart;
+
+    // Generate _category_.json for subdirectories
+    if (options.generateCategoryJson && !options.dryRun) {
+      const relDir = path.relative(inputDir, dir);
+      if (relDir) {
+        // It's a subdirectory, not the root
+        const outputSubDir = path.join(outputDir, relDir);
+        const categoryPath = path.join(outputSubDir, '_category_.json');
+        const label = path.basename(dir)
+          .replace(/[-_]/g, ' ')
+          .replace(/\b\w/g, c => c.toUpperCase());
+        const categoryJson = { label, position: categoryPosition++ };
+        await fs.mkdir(outputSubDir, { recursive: true });
+        await fs.writeFile(categoryPath, JSON.stringify(categoryJson, null, 2) + '\n', 'utf-8');
+        if (!options.quiet) console.log(`📁 _category_.json → ${categoryPath}`);
+      }
+    }
 
     for (const inputPath of dirFiles) {
       const relativePath = path.relative(inputDir, inputPath);
