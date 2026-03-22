@@ -34,6 +34,7 @@ function parseArgs(args) {
     verbose: false,
     quiet: false,
     noFrontMatter: false,
+    minimalFrontMatter: false,
     noAdmonitions: false,
     noEscape: false,
     noHtmlFix: false,
@@ -76,6 +77,10 @@ function parseArgs(args) {
 
       case '--no-front-matter':
         options.noFrontMatter = true;
+        break;
+
+      case '--minimal-front-matter':
+        options.minimalFrontMatter = true;
         break;
 
       case '--no-admonitions':
@@ -307,6 +312,7 @@ async function main() {
 
   const converter = new GfmToMdxConverter({
     addFrontMatter: !options.noFrontMatter,
+    minimalFrontMatter: options.minimalFrontMatter,
     convertAdmonitions: !options.noAdmonitions,
     escapeJsxChars: !options.noEscape,
     fixSelfClosingTags: !options.noHtmlFix,

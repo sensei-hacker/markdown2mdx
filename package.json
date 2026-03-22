@@ -1,0 +1,22 @@
+{
+  "name": "gfm-to-mdx-converter",
+  "version": "1.0.0",
+  "description": "Converts GitHub Flavored Markdown to Docusaurus-compatible MDX format",
+  "type": "module",
+  "main": "full_file/index.js",
+  "bin": {
+    "gfm2mdx": "full_file/cli.js"
+  },
+  "scripts": {
+    "test": "node --experimental-vm-modules node_modules/.bin/jest full_file/converter.test.js",
+    "convert": "node full_file/cli.js"
+  },
+  "dependencies": {
+    "glob": "^11.0.0",
+    "markdown-it": "^14.1.0",
+    "node-html-parser": "^6.1.13"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}

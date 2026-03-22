@@ -4,12 +4,12 @@
 
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
-import { 
-  GfmToMdxConverter, 
-  HtmlFixer, 
+import {
+  GfmToMdxConverter,
+  HtmlFixer,
   AdmonitionConverter,
-  FrontMatterGenerator 
-} from '../src/converter.js';
+  FrontMatterGenerator
+} from './converter.js';
 
 // =============================================================================
 // Test Fixtures - INAV-specific examples
@@ -54,13 +54,31 @@ Use \`Air<2g\` for most aircraft.
 </div>
 `,
 
-  // Admonitions
+  // Admonitions - legacy bold-keyword style
   admonitions: `
 > **Note:** This is important information.
 
 > **Warning:** Be careful with this setting.
 
 > ⚠️ This could cause issues.
+`,
+
+  // GitHub Alert syntax (>[!TYPE]) - dominant format in current INAV wiki
+  githubAlerts: `
+>[!NOTE]
+>This is a note.
+
+>[!Warning]
+>Be careful with this setting.
+
+>[!TIP]
+>This is a helpful tip.
+
+>[!IMPORTANT]
+>This is important.
+
+>[!CAUTION]
+>Proceed with caution.
 `,
 
   // Comparison operators
@@ -211,6 +229,62 @@ describe('GfmToMdxConverter', () => {
       });
       const result = converterWithAdmonitions.convert(INAV_EXAMPLES.admonitions);
       assert.ok(result.content.includes(':::warning'));
+    });
+
+    it('should convert >[!NOTE] GitHub alert syntax', () => {
+      const c = new GfmToMdxConverter({ addFrontMatter: false, convertAdmonitions: true });
+      const result = c.convert(INAV_EXAMPLES.githubAlerts);
+      assert.ok(result.content.includes(':::note'), 'should produce :::note');
+      assert.ok(!result.content.includes('>[!NOTE]'), 'should remove >[!NOTE]');
+    });
+
+    it('should convert >[!Warning] (mixed case) GitHub alert syntax', () => {
+      const c = new GfmToMdxConverter({ addFrontMatter: false, convertAdmonitions: true });
+      const result = c.convert(INAV_EXAMPLES.githubAlerts);
+      assert.ok(result.content.includes(':::warning'), 'should produce :::warning');
+      assert.ok(!result.content.includes('>[!Warning]'), 'should remove >[!Warning]');
+    });
+
+    it('should convert >[!TIP] to :::tip', () => {
+      const c = new GfmToMdxConverter({ addFrontMatter: false, convertAdmonitions: true });
+      const result = c.convert(INAV_EXAMPLES.githubAlerts);
+      assert.ok(result.content.includes(':::tip'), 'should produce :::tip');
+    });
+
+    it('should convert >[!IMPORTANT] to :::info', () => {
+      const c = new GfmToMdxConverter({ addFrontMatter: false, convertAdmonitions: true });
+      const result = c.convert(INAV_EXAMPLES.githubAlerts);
+      assert.ok(result.content.includes(':::info'), 'should produce :::info');
+    });
+
+    it('should convert >[!CAUTION] to :::danger', () => {
+      const c = new GfmToMdxConverter({ addFrontMatter: false, convertAdmonitions: true });
+      const result = c.convert(INAV_EXAMPLES.githubAlerts);
+      assert.ok(result.content.includes(':::danger'), 'should produce :::danger');
+    });
+
+    it('should preserve body text in GitHub alerts', () => {
+      const c = new GfmToMdxConverter({ addFrontMatter: false, convertAdmonitions: true });
+      const input = '>[!NOTE]\n>This is a note.\n';
+      const result = c.convert(input);
+      assert.ok(result.content.includes('This is a note.'), 'should keep body text');
+    });
+
+    it('should handle >[!NOTE] with trailing space', () => {
+      const c = new GfmToMdxConverter({ addFrontMatter: false, convertAdmonitions: true });
+      const input = '>[!NOTE] \n>Body text here.\n';
+      const result = c.convert(input);
+      assert.ok(result.content.includes(':::note'), 'should produce :::note');
+      assert.ok(result.content.includes('Body text here.'), 'should keep body text');
+    });
+
+    it('should handle multiline GitHub alert body', () => {
+      const c = new GfmToMdxConverter({ addFrontMatter: false, convertAdmonitions: true });
+      const input = '>[!NOTE]\n>Line one.\n>Line two.\n';
+      const result = c.convert(input);
+      assert.ok(result.content.includes(':::note'), 'should produce :::note');
+      assert.ok(result.content.includes('Line one.'), 'should include first body line');
+      assert.ok(result.content.includes('Line two.'), 'should include second body line');
     });
   });
 

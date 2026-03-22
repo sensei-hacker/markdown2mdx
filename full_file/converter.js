@@ -110,6 +110,13 @@ export class HtmlFixer {
 export class AdmonitionConverter {
   constructor() {
     this.patterns = [
+      // GitHub Alert syntax (>[!TYPE]) — dominant format in current wiki, must come first
+      { pattern: /^>\[!note\]\s*/im, type: 'note' },
+      { pattern: /^>\[!tip\]\s*/im, type: 'tip' },
+      { pattern: /^>\[!warning\]\s*/im, type: 'warning' },
+      { pattern: /^>\[!important\]\s*/im, type: 'info' },
+      { pattern: /^>\[!caution\]\s*/im, type: 'danger' },
+      // Legacy bold-keyword blockquote style
       { pattern: /^>\s*\*\*Note:?\*\*\s*/im, type: 'note' },
       { pattern: /^>\s*\*\*Warning:?\*\*\s*/im, type: 'warning' },
       { pattern: /^>\s*\*\*Tip:?\*\*\s*/im, type: 'tip' },
@@ -133,9 +140,13 @@ export class AdmonitionConverter {
   }
 
   convertAll(content) {
-    return content.replace(/^((?:>.*\n?)+)/gm, (match) => {
+    return content.replace(/^((?:>.*\n?)+)/gm, (match, _p1, offset, str) => {
       const converted = this.convertBlockquote(match);
-      return converted ?? match;
+      if (!converted) return match;
+      // Ensure closing ::: is separated from any immediately-following content
+      const afterMatch = str.slice(offset + match.length);
+      const needsBlankLine = afterMatch.length > 0 && !afterMatch.startsWith('\n');
+      return converted + (needsBlankLine ? '\n\n' : '\n');
     });
   }
 }
@@ -210,6 +221,7 @@ export class GfmToMdxConverter {
   constructor(options = {}) {
     this.options = {
       addFrontMatter: true,
+      minimalFrontMatter: false, // When true, only emit title: (matches manual docs style)
       validateHtml: true,
       escapeJsxChars: true,
       convertAdmonitions: true,
@@ -434,12 +446,18 @@ export class GfmToMdxConverter {
 
   generateFrontMatter(content, options, existingFm) {
     if (existingFm && this.options.preserveExistingFrontMatter) return existingFm;
-    
+
+    if (this.options.minimalFrontMatter) {
+      // Match manual docs style: just title, nothing else
+      const title = options.title || this.frontMatterGenerator.extractTitle(content);
+      return this.frontMatterGenerator.generate({ title });
+    }
+
     const fmOptions = { ...options };
     if (!fmOptions.title) fmOptions.title = this.frontMatterGenerator.extractTitle(content);
     if (!fmOptions.sidebarLabel && fmOptions.title) fmOptions.sidebarLabel = fmOptions.title;
     if (!fmOptions.description) fmOptions.description = this.frontMatterGenerator.extractDescription(content);
-    
+
     return this.frontMatterGenerator.generate(fmOptions);
   }
 
