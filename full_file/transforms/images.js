@@ -138,13 +138,15 @@ export class ImageRewriter {
   }
 
   /**
-   * Rewrite wiki-relative images/X.jpg paths to /img/content/X.jpg.
-   * These are images stored in the wiki git repo's images/ directory.
+   * Rewrite wiki-relative asset paths to /img/content/X.
+   * Handles both images/ and assets/ prefixes used by GitHub wikis.
    */
   rewriteWikiRelativeUrl(url) {
     if (url.startsWith('images/')) {
-      const filename = url.slice('images/'.length);
-      return `${this.imgBaseUrl}/${filename}`;
+      return `${this.imgBaseUrl}/${url.slice('images/'.length)}`;
+    }
+    if (url.startsWith('assets/')) {
+      return `${this.imgBaseUrl}/${url.slice('assets/'.length)}`;
     }
     return null;
   }
@@ -178,6 +180,16 @@ export class ImageRewriter {
         const rewritten = this.rewriteUrl(url);
         if (rewritten === url) return match;
         return `<img${before}src="${rewritten}"${after}>`;
+      }
+    );
+
+    // Regular links to wiki assets: [text](assets/X) or [text](images/X)
+    content = content.replace(
+      /\[([^\]]*)\]\(([^)]+)\)/g,
+      (match, text, url) => {
+        const wikiRelative = this.rewriteWikiRelativeUrl(url);
+        if (!wikiRelative) return match;
+        return `[${text}](${wikiRelative})`;
       }
     );
 

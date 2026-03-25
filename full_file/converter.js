@@ -17,9 +17,11 @@ import { transform as rewriteLinks }              from './transforms/links.js';
 import { transform as rewriteImages }             from './transforms/images.js';
 import { transform as normalizeHorizontalRules }  from './transforms/horizontal-rules.js';
 import { transform as fixReversedLinks }          from './transforms/reversed-links.js';
+import { transform as normalizeLinks }            from './transforms/normalize-links.js';
 import { transform as addFrontMatter,
          extractFrontMatter,
-         extractTitle }                           from './transforms/front-matter.js';
+         extractTitle,
+         normalizeFrontMatterTitle }              from './transforms/front-matter.js';
 
 export { VOID_ELEMENTS } from './transforms/html-fix.js';
 
@@ -120,6 +122,9 @@ export class GfmToMdxConverter {
       result = rewriteLinks(result, ctx);
     }
 
+    // Step 8b: Normalize link anchors (lowercase) and consecutive hyphens in paths
+    result = normalizeLinks(result);
+
     // Step 9: Rewrite GitHub image URLs to local paths
     if (this.options.rewriteImages) {
       result = rewriteImages(result, ctx);
@@ -138,7 +143,7 @@ export class GfmToMdxConverter {
 
     // Step 13: Add front matter
     if (existingFm && this.options.preserveExistingFrontMatter) {
-      result = existingFm + '\n\n' + result;
+      result = normalizeFrontMatterTitle(existingFm) + '\n\n' + result;
     } else if (this.options.addFrontMatter) {
       result = addFrontMatter(result, {
         minimal: this.options.minimalFrontMatter,

@@ -236,11 +236,50 @@ export class LinkRewriter {
     );
   }
 
+  /**
+   * Rewrite plain relative .md links and bare page-name links.
+   *
+   * Handles cases the wiki uses that survive into converted output:
+   *   [text](./GPS-and-Compass-setup.md)   — relative same-dir
+   *   [text](../features/Failsafe.md)       — relative cross-dir
+   *   [text](MSP-V2)                        — bare page name, no .md
+   *
+   * In all cases the stem is looked up in the page mapping (normalized),
+   * so filenames whose wiki slug differs from their Docusaurus name
+   * (e.g. commas or colons stripped in links) are resolved correctly.
+   */
+  rewriteRelativeMdLinks(content) {
+    return content.replace(
+      /\[([^\]]*)\]\(([^)#\s]+)(#[^)\s]*)?\)/g,
+      (match, text, url, anchor = '') => {
+        // Skip external URLs and absolute paths (already handled elsewhere)
+        if (
+          url.startsWith('http://') ||
+          url.startsWith('https://') ||
+          url.startsWith('/') ||
+          url.startsWith('mailto:')
+        ) return match;
+
+        // Extract the basename stem (strips directory prefix and .md extension)
+        const basename = path.basename(url);
+        const stem = basename.endsWith('.md') ? basename.slice(0, -3) : basename;
+
+        if (!stem || stem === '.' || stem === '..') return match;
+
+        const found = this.lookup(stem + (anchor ? anchor : ''));
+        if (!found) return match;
+
+        return `[${text}](${this.buildHref(found)})`;
+      }
+    );
+  }
+
   /** Apply all link rewrites. */
   rewriteAll(content) {
     content = this.rewriteWikiUrls(content);
     content = this.rewriteDoubleLinks(content);
     content = this.fixRootRelativeGitHubLinks(content);
+    content = this.rewriteRelativeMdLinks(content);
     return content;
   }
 }

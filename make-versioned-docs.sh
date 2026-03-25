@@ -50,6 +50,8 @@ echo "  $(ls "$TMPDIR"/*.md 2>/dev/null | wc -l) markdown files extracted"
 
 # Step 2: Build category mapping from current docs site
 # Map: normalized-page-name → category (quickstart/features/advanced/legacyinfo)
+# Keys are normalized (lowercase, colons→dashes, consecutive dashes collapsed) so
+# wiki filenames like "GPS-and-Compass-setup" match docs entries like "GPS--and-Compass-setup".
 declare -A CATEGORY_MAP
 while IFS='|' read -r name dir; do
   CATEGORY_MAP["$name"]="$dir"
@@ -61,7 +63,11 @@ done < <(
     stem="${base%.md}"
     # Get directory part only
     if [[ "$dir" == "$base" ]]; then dir="advanced"; fi
-    echo "${stem}|${dir}"
+    # Normalize key: lowercase, colons→dashes, collapse consecutive dashes
+    norm="${stem,,}"
+    norm="${norm//:/-}"
+    norm="${norm//--/-}"
+    echo "${norm}|${dir}"
   done
 )
 
@@ -88,25 +94,26 @@ for wiki_file in "$TMPDIR"/*.md; do
     continue
   fi
 
-  # Sanitize stem: remove characters that break Docusaurus routing / HTML class
-  # attributes (double quotes, angle brackets, backticks, etc.).
+  # Sanitize stem: remove characters that break Docusaurus routing, HTML class
+  # attributes, or markdown link syntax.
   # The wiki file '"Something"-is-disabled----Reasons.md' is a real example.
-  safe_stem="${stem//\"/}"   # remove double quotes
-  safe_stem="${safe_stem//\</}"  # remove <
-  safe_stem="${safe_stem//\>/}"  # remove >
-  safe_stem="${safe_stem//\`/}"  # remove backticks
-  safe_stem="${safe_stem//|/}"   # remove pipes
+  # Parentheses break markdown link syntax: [text](page-(paren).md) is mis-parsed.
+  safe_stem="${stem//\"/}"        # remove double quotes
+  safe_stem="${safe_stem//\</}"   # remove <
+  safe_stem="${safe_stem//\>/}"   # remove >
+  safe_stem="${safe_stem//\`/}"   # remove backticks
+  safe_stem="${safe_stem//|/}"    # remove pipes
+  safe_stem="${safe_stem//\(/-}"  # ( → - (consistent with link normalizer)
+  safe_stem="${safe_stem//\)/}"   # ) → removed
+  safe_stem="${safe_stem//--/-}"  # collapse any resulting consecutive dashes
+  safe_stem="${safe_stem%%-}"     # strip trailing dash
   stem="$safe_stem"
 
-  # Determine category from mapping, default to advanced
-  category="${CATEGORY_MAP[$stem]}"
-  if [[ -z "$category" || "$category" == "." ]]; then
-    # Try normalized lookup
-    normalized="${stem,,}"  # lowercase
-    normalized="${normalized//:/-}"
-    normalized="${normalized//--/-}"
-    category="${CATEGORY_MAP[$normalized]:-advanced}"
-  fi
+  # Determine category from mapping (keys are normalized), default to advanced
+  normalized="${stem,,}"
+  normalized="${normalized//:/-}"
+  normalized="${normalized//--/-}"
+  category="${CATEGORY_MAP[$normalized]:-advanced}"
 
   # Handle root-level special files
   if [[ "$stem" =~ ^(welcome|Welcome)$ ]]; then
@@ -178,6 +185,16 @@ for cat_dir in quickstart features advanced legacyinfo; do
 EOF
   fi
 done
+
+# Step 8: Re-resolve relative links using the versioned output as the mapping source.
+# Pass 1 resolved links using docs/ (which may have different filenames due to colons/commas
+# in wiki filenames). This pass corrects those using the actual output file layout.
+echo "Re-resolving relative links using versioned output mapping..."
+node "$SCRIPT_DIR/full_file/cli.js" \
+  --dir "$VERSION_DIR" "$VERSION_DIR" \
+  --rewrite-links --docs-dir "$VERSION_DIR" --link-base "$VERSION_DIR" \
+  --no-admonitions --no-escape --no-html-fix --quiet
+echo "  Done."
 
 echo ""
 echo "=== Done! ==="

@@ -147,4 +147,29 @@ export function extractFrontMatter(content) {
   return { frontMatter: null, body: content };
 }
 
+/**
+ * Normalize the title field in an existing front matter block.
+ * If the title is all-uppercase (e.g. "TROUBLESHOOTING"), converts it to
+ * title case using stemToTitle. Mixed-case and short acronym titles are
+ * left unchanged.
+ *
+ * @param {string} fmBlock  Raw front matter block including --- delimiters
+ * @returns {string}
+ */
+export function normalizeFrontMatterTitle(fmBlock) {
+  return fmBlock.replace(
+    /^(title:\s*)(.+)$/m,
+    (match, prefix, rawTitle) => {
+      const title = rawTitle.trim().replace(/^["']|["']$/g, ''); // strip quotes
+      // Only normalize if every alphabetic character is uppercase
+      // and the title is long enough not to be an acronym
+      if (title.length > 4 && title === title.toUpperCase() && /[A-Z]{2,}/.test(title)) {
+        const normalized = stemToTitle(title.toLowerCase().replace(/\s+/g, '-'));
+        return `${prefix}${normalized}`;
+      }
+      return match;
+    }
+  );
+}
+
 export default transform;
