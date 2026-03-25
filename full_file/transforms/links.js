@@ -178,8 +178,10 @@ export class LinkRewriter {
    */
   rewriteWikiUrls(content) {
     // Absolute: https://github.com/iNavFlight/inav/wiki/...
+    // The URL pattern allows one level of balanced parens (e.g. Lightweight-Telemetry-(LTM))
+    // so that the closing ) of the markdown link is not confused with ) inside the URL.
     content = content.replace(
-      /\[([^\]]*)\]\(https?:\/\/github\.com\/iNavFlight\/inav\/wiki\/([^)\s]+)\)/g,
+      /\[([^\]]*)\]\(https?:\/\/github\.com\/iNavFlight\/inav\/wiki\/([^()\s]+(?:\([^()]*\)[^()\s]*)*)\)/g,
       (match, text, pageAndAnchor) => {
         const found = this.lookup(pageAndAnchor);
         if (!found) return match;
@@ -189,7 +191,7 @@ export class LinkRewriter {
 
     // Relative: /iNavFlight/inav/wiki/... (root-relative GitHub wiki links)
     content = content.replace(
-      /\[([^\]]*)\]\(\/iNavFlight\/inav\/wiki\/([^)\s]+)\)/g,
+      /\[([^\]]*)\]\(\/iNavFlight\/inav\/wiki\/([^()\s]+(?:\([^()]*\)[^()\s]*)*)\)/g,
       (match, text, pageAndAnchor) => {
         const found = this.lookup(pageAndAnchor);
         if (!found) return match;
