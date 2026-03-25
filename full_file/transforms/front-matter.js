@@ -57,8 +57,11 @@ export function stemToTitle(stem) {
   return words
     .map((word, idx) => {
       const lower = word.toLowerCase();
-      // Preserve known tokens exactly
+      // Preserve known tokens exactly (e.g. iNav, iNavFlight)
       if (PRESERVE[lower]) return PRESERVE[lower];
+      // Preserve short all-uppercase words as acronyms (e.g. MSP, GPS, LTM, OSD, RTH)
+      // 2-5 chars: almost certainly an acronym. Longer all-caps words are likely sentences-case titles.
+      if (word.length >= 2 && word.length <= 5 && word === word.toUpperCase() && /^[A-Z]/.test(word)) return word;
       // First word is always capitalized
       if (idx === 0) return word.charAt(0).toUpperCase() + word.slice(1);
       // Lowercase articles/conjunctions/prepositions
