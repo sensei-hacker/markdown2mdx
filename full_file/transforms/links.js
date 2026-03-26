@@ -47,8 +47,44 @@ export function transform(content, ctx = {}) {
  * @param {string} docsDir  Absolute path to the docs/ directory
  * @returns {Map<string, string>}  Normalized name → 'category/PageName.md'
  */
+/**
+ * Convert a heading's text to its GFM/Docusaurus anchor slug.
+ * Matches GitHub's algorithm: lowercase, strip non-(word|space|hyphen), spaces→hyphens.
+ * @param {string} text  Raw heading text (without leading #s)
+ * @returns {string}
+ */
+function headingToAnchor(text) {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-');
+}
+
+/**
+ * Extract the set of valid anchor slugs from a markdown file's headings.
+ * @param {string} filePath  Absolute path to a .md file
+ * @returns {Set<string>}
+ */
+function extractAnchors(filePath) {
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const anchors = new Set();
+    for (const m of content.matchAll(/^ {0,3}#{1,6}\s+(.+)$/gm)) {
+      anchors.add(headingToAnchor(m[1].trim()));
+    }
+    return anchors;
+  } catch {
+    return new Set();
+  }
+}
+
 export function buildPageMapping(docsDir) {
   const mapping = new Map();
+  // headingMap: relPath → Set<anchor> — attached as a property for anchor validation.
+  // Backward-compatible: all existing callers use Map methods (.get/.has/.size) and
+  // do not inspect extra properties.
+  const headingMap = new Map();
 
   function scan(dir, relBase) {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -63,11 +99,15 @@ export function buildPageMapping(docsDir) {
         for (const key of normalizeVariants(stem)) {
           if (!mapping.has(key)) mapping.set(key, relPath);
         }
+
+        // Index headings for anchor validation
+        headingMap.set(path.normalize(relPath), extractAnchors(path.join(dir, entry.name)));
       }
     }
   }
 
   scan(docsDir, '');
+  mapping.headingMap = headingMap;
   return mapping;
 }
 
@@ -103,8 +143,10 @@ export class LinkRewriter {
    *   Used to compute relative links. If null, links will use absolute
    *   root-relative paths (/docs/...).
    */
-  constructor(pageMapping, currentFilePath = null) {
+  constructor(pageMapping, currentFilePath = null, validateAnchors = false) {
     this.pageMapping = pageMapping;
+    this.headingMap = validateAnchors ? (pageMapping.headingMap || null) : null;
+    this.currentFilePath = currentFilePath;
     this.currentDir = currentFilePath ? path.dirname(currentFilePath) : null;
   }
 
@@ -165,8 +207,24 @@ export class LinkRewriter {
 
   /** Build the href string for a found link. */
   buildHref(found) {
+    const normTarget = path.normalize(found.targetPath);
+
+    // Same-file anchor: emit bare #anchor instead of ./File.md#anchor
+    if (found.anchor && this.currentFilePath && normTarget === path.normalize(this.currentFilePath)) {
+      return `#${found.anchor}`;
+    }
+
+    let anchor = found.anchor;
+    // Drop anchors that don't exist in the target file's headings (stale wiki links)
+    if (anchor && this.headingMap) {
+      const anchors = this.headingMap.get(normTarget);
+      if (anchors && !anchors.has(anchor)) {
+        anchor = null;
+      }
+    }
+
     const base = this.toRelative(found.targetPath);
-    return found.anchor ? `${base}#${found.anchor}` : base;
+    return anchor ? `${base}#${anchor}` : base;
   }
 
   /**

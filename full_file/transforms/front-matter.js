@@ -166,7 +166,7 @@ export function normalizeFrontMatterTitle(fmBlock) {
       const title = rawTitle.trim().replace(/^["']|["']$/g, ''); // strip quotes
       // Only normalize if every alphabetic character is uppercase
       // and the title is long enough not to be an acronym
-      if (title.length > 4 && title === title.toUpperCase() && /[A-Z]{2,}/.test(title)) {
+      if (title.length > 4 && title === title.toUpperCase() && /[A-Z]{2,}/.test(title) && !/\d/.test(title)) {
         const normalized = stemToTitle(title.toLowerCase().replace(/\s+/g, '-'));
         return `${prefix}${normalized}`;
       }

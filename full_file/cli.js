@@ -129,6 +129,10 @@ function parseArgs(args) {
         options.noEscape = true;
         break;
 
+      case '--validate-anchors':
+        options.validateAnchors = true;
+        break;
+
       case '--no-html-fix':
         options.noHtmlFix = true;
         break;
@@ -249,7 +253,7 @@ async function processFile(inputPath, outputPath, converter, options, sidebarPos
   // Set up link rewriter if enabled
   if (options.rewriteLinks && pageMapping) {
     const relOutputPath = computeRelativeOutputPath(outputPath, options, stem);
-    converter.setLinkRewriter(new LinkRewriter(pageMapping, relOutputPath));
+    converter.setLinkRewriter(new LinkRewriter(pageMapping, relOutputPath, options.validateAnchors));
   }
 
   if (options.rewriteImages && imageRewriter) {

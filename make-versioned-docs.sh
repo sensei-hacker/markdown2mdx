@@ -169,20 +169,14 @@ echo "  Wrote: $SIDEBAR_FILE"
 for cat_dir in quickstart features advanced legacyinfo; do
   cat_path="$VERSION_DIR/$cat_dir"
   if [ -d "$cat_path" ] && [ "$(ls -A "$cat_path")" ]; then
-    label="${cat_dir^}"  # capitalize first letter
-    # Position based on order
     case "$cat_dir" in
-      quickstart) pos=1 ;;
-      features)   pos=2 ;;
-      advanced)   pos=3 ;;
-      legacyinfo) pos=4 ;;
+      quickstart) label="Quickstart"; pos=3; desc="Get quickly setup and flying with a basic configuration" ;;
+      features)   label="Features";   pos=4; desc="Find out how INAV's features work." ;;
+      advanced)   label="Advanced";   pos=5; desc="Advanced configuration" ;;
+      legacyinfo) label="Legacy Info"; pos=6; desc="Find out how INAV's features work." ;;
     esac
-    cat > "$cat_path/_category_.json" <<EOF
-{
-  "label": "$label",
-  "position": $pos
-}
-EOF
+    printf '{\n    "label": "%s",\n    "position": %d,\n    "link": {\n      "type": "generated-index",\n      "description": "%s"\n    }\n  }' \
+      "$label" "$pos" "$desc" > "$cat_path/_category_.json"
   fi
 done
 
@@ -193,7 +187,7 @@ echo "Re-resolving relative links using versioned output mapping..."
 node "$SCRIPT_DIR/full_file/cli.js" \
   --dir "$VERSION_DIR" "$VERSION_DIR" \
   --rewrite-links --docs-dir "$VERSION_DIR" --link-base "$VERSION_DIR" \
-  --no-admonitions --no-escape --no-html-fix --quiet
+  --no-admonitions --no-escape --no-html-fix --validate-anchors --quiet
 echo "  Done."
 
 echo ""
